@@ -39,7 +39,6 @@ func (t *SimpleChaincode) Init(stub shim.ChaincodeStubInterface, function string
 	if len(args) != 1 {
 		return nil, errors.New("Incorrect number of arguments. Expecting 1")
 	}
-
 	err := stub.PutState("akasa_labs_1", []byte(args[0]))
 	if err != nil {
 		return nil, err
@@ -103,7 +102,7 @@ func (t *SimpleChaincode) read(stub shim.ChaincodeStubInterface, args []string) 
 	if len(args) != 1 {
 		return nil, errors.New("Incorrect number of arguments. Expecting name of the key to query")
 	}
-
+	fmt.Println("I am here in read")
 	key = args[0]
 	valAsbytes, err := stub.GetState(key)
 	if err != nil {
