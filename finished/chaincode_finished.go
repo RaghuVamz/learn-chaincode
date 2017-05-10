@@ -119,28 +119,29 @@ func InitLedger(stub shim.ChaincodeStubInterface, tableName string) error {
 	return err
 }
 
-//////////////////////////////////////////////////////////////
-// Invoke Functions based on Function name
-// The function name gets resolved to one of the following calls
-// during an invoke
-//
-//////////////////////////////////////////////////////////////
-func InvokeFunction(fname string) func(stub shim.ChaincodeStubInterface, function string, args []string) ([]byte, error) {
-	InvokeFunc := map[string]func(stub shim.ChaincodeStubInterface, function string, args []string) ([]byte, error){
-		"PostAsset": PostAsset,
+// Invoke is our entry point to invoke a chaincode function
+func (t *SimpleChaincode) Invoke(stub shim.ChaincodeStubInterface, function string, args []string) ([]byte, error) {
+	fmt.Println("invoke is running " + function)
+
+	// Handle different functions
+	if function == "postAsset" {
+		return t.PostAsset(stub, args)
 	}
-	return InvokeFunc[fname]
+	fmt.Println("invoke did not find func: " + function) //error
+	return nil, errors.New("Received unknown function invocation: " + function)
 }
 
-//////////////////////////////////////////////////////////////
-// Query Functions based on Function name
-//
-//////////////////////////////////////////////////////////////
-func QueryFunction(fname string) func(stub shim.ChaincodeStubInterface, function string, args []string) ([]byte, error) {
-	QueryFunc := map[string]func(stub shim.ChaincodeStubInterface, function string, args []string) ([]byte, error){
-		"GetAsset": GetAsset,
+// Invoke is our entry point to invoke a chaincode function
+func (t *SimpleChaincode) Query(stub shim.ChaincodeStubInterface, function string, args []string) ([]byte, error) {
+	fmt.Println("invoke is running " + function)
+
+	// Handle different functions
+	if function == "getAsset" {
+		return t.GetAsset(stub, args)
 	}
-	return QueryFunc[fname]
+	fmt.Println("invoke did not find func: " + function) //error
+
+	return nil, errors.New("Received unknown function invocation: " + function)
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -151,7 +152,7 @@ func QueryFunction(fname string) func(stub shim.ChaincodeStubInterface, function
 //./peer chaincode invoke -l golang -n mycc -c '{"Function": "PostItem", "Args":["1000", "ARTINV", "Shadows by Asppen", "Asppen Messer", "20140202", "Original", "Landscape" , "Canvas", "15 x 15 in", "sample_7.png","$600", "100"]}'
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-func PostAsset(stub shim.ChaincodeStubInterface, function string, args []string) ([]byte, error) {
+func (t *SimpleChaincode) PostAsset(stub shim.ChaincodeStubInterface, args []string) ([]byte, error) {
 
 	assetObject, err := CreateAsset(args[0:])
 	if err != nil {
@@ -181,7 +182,8 @@ func PostAsset(stub shim.ChaincodeStubInterface, function string, args []string)
 			fmt.Println("PostItem() : write error while inserting record\n")
 			return buff, err
 		}
-	return nil, nil
+		return nil, nil
+	}
 }
 
 // CreateAssetObject creates an asset
@@ -251,7 +253,7 @@ func UpdateLedger(stub shim.ChaincodeStubInterface, tableName string, keys []str
 	return nil
 }
 
-func GetItem(stub shim.ChaincodeStubInterface, function string, args []string) ([]byte, error) {
+func (t *SimpleChaincode) GetAsset(stub shim.ChaincodeStubInterface, args []string) ([]byte, error) {
 
 	var err error
 
@@ -270,18 +272,12 @@ func GetItem(stub shim.ChaincodeStubInterface, function string, args []string) (
 	}
 
 	fmt.Println("GetItem() : Response : Successfull ")
-
-	// Masking ItemImage binary data
-	itemObj, _ := JSONtoAR(Avalbytes)
-	itemObj.ItemImage = []byte{}
-	Avalbytes, _ = ARtoJSON(itemObj)
-
 	return Avalbytes, nil
 }
 
-func JSONtoAR(data []byte) (ItemObject, error) {
+func JSONtoAR(data []byte) (AssetObject, error) {
 
-	ar := ItemObject{}
+	ar := AssetObject{}
 	err := json.Unmarshal([]byte(data), &ar)
 	if err != nil {
 		fmt.Println("Unmarshal failed : ", err)
@@ -290,3 +286,35 @@ func JSONtoAR(data []byte) (ItemObject, error) {
 	return ar, err
 }
 
+//random comment to checkin
+
+func QueryLedger(stub shim.ChaincodeStubInterface, tableName string, args []string) ([]byte, error) {
+
+	var columns []shim.Column
+	nCol := GetNumberOfKeys(tableName)
+	for i := 0; i < nCol; i++ {
+		colNext := shim.Column{Value: &shim.Column_String_{String_: args[i]}}
+		columns = append(columns, colNext)
+	}
+
+	row, err := stub.GetRow(tableName, columns)
+	if err != nil {
+		return nil, errors.New("unable to query row!")
+	}
+	fmt.Println("Length or number of rows retrieved ", len(row.Columns))
+
+	if len(row.Columns) == 0 {
+		jsonResp := "{\"Error\":\"Failed retrieving data " + args[0] + ". \"}"
+		fmt.Println("Error retrieving data record for Key = ", args[0], "Error : ", jsonResp)
+		return nil, errors.New(jsonResp)
+	}
+
+	//fmt.Println("User Query Response:", row)
+	//jsonResp := "{\"Owner\":\"" + string(row.Columns[nCol].GetBytes()) + "\"}"
+	//fmt.Println("User Query Response:%s\n", jsonResp)
+	Avalbytes := row.Columns[nCol].GetBytes()
+
+	// Perform Any additional processing of data
+	fmt.Println("QueryLedger() : Successful - Proceeding to ProcessRequestType ")
+	return Avalbytes, nil
+}
