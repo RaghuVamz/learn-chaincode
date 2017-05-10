@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/hyperledger/fabric/core/chaincode/shim"
 )
@@ -36,7 +37,8 @@ var aucTables = []string{"AssetTable"}
 
 func GetNumberOfKeys(tname string) int {
 	TableMap := map[string]int{
-		"AssetTable": 1,
+		"AssetTable":      1,
+		"ContractHistory": 3,
 	}
 	return TableMap[tname]
 }
@@ -182,6 +184,13 @@ func (t *SimpleChaincode) PostAsset(stub shim.ChaincodeStubInterface, args []str
 			fmt.Println("PostItem() : write error while inserting record\n")
 			return buff, err
 		}
+		//update Asset History table
+		keys1 := []string{"2016", assetObject.Serialno, time.Now().Format("2006-01-02 15:04:05")}
+		err = UpdateLedger(stub, "ContractHistory", keys1, buff)
+		if err != nil {
+			fmt.Println("PostItem() : write error while inserting record into contract history table\n")
+			return buff, err
+		}
 		return nil, nil
 	}
 }
@@ -259,6 +268,7 @@ func (t *SimpleChaincode) GetAsset(stub shim.ChaincodeStubInterface, args []stri
 
 	// Get the Objects and Display it
 	Avalbytes, err := QueryLedger(stub, "AssetTable", args)
+
 	if err != nil {
 		fmt.Println("GetItem() : Failed to Query Object ")
 		jsonResp := "{\"Error\":\"Failed to get  Object Data for " + args[0] + "\"}"
@@ -316,5 +326,28 @@ func QueryLedger(stub shim.ChaincodeStubInterface, tableName string, args []stri
 
 	// Perform Any additional processing of data
 	fmt.Println("QueryLedger() : Successful - Proceeding to ProcessRequestType ")
+	return Avalbytes, nil
+}
+
+func (t *SimpleChaincode) GetHistory(stub shim.ChaincodeStubInterface, args []string) ([]byte, error) {
+
+	var err error
+
+	// Get the Objects and Display it
+	Avalbytes, err := QueryLedger(stub, "ContractHistory", args)
+
+	if err != nil {
+		fmt.Println("GetItem() : Failed to Query Object ")
+		jsonResp := "{\"Error\":\"Failed to get  Object Data for " + args[0] + "\"}"
+		return nil, errors.New(jsonResp)
+	}
+
+	if Avalbytes == nil {
+		fmt.Println("GetItem() : Incomplete Query Object ")
+		jsonResp := "{\"Error\":\"Incomplete information about the key for " + args[0] + "\"}"
+		return nil, errors.New(jsonResp)
+	}
+
+	fmt.Println("GetItem() : Response : Successfull ")
 	return Avalbytes, nil
 }
