@@ -353,7 +353,7 @@ func (t *SimpleChaincode) GetHistory(stub shim.ChaincodeStubInterface, args []st
 	return Avalbytes, nil
 }
 
-/*func GetListOfContractHistory(stub shim.ChaincodeStubInterface, function string, args []string) ([]byte, error) {
+func GetListOfContractHistory(stub shim.ChaincodeStubInterface, function string, args []string) ([]byte, error) {
 
 	rows, err := GetList(stub, "ContractHistory", args)
 	if err != nil {
@@ -365,7 +365,7 @@ func (t *SimpleChaincode) GetHistory(stub shim.ChaincodeStubInterface, args []st
 	tlist := make([]AssetObject, len(rows))
 	for i := 0; i < len(rows); i++ {
 		ts := rows[i].Columns[nCol].GetBytes()
-		ar, err := JSONtoAucReq(ts)
+		ar, err := JSONtoAR(ts)
 		if err != nil {
 			fmt.Println("GetListOfOpenAucs() Failed : Ummarshall error")
 			return nil, fmt.Errorf("GetListOfOpenAucs() operation failed. %s", err)
@@ -378,7 +378,7 @@ func (t *SimpleChaincode) GetHistory(stub shim.ChaincodeStubInterface, args []st
 	//fmt.Println("List of Open Auctions : ", jsonRows)
 	return jsonRows, nil
 
-}*/
+}
 
 func GetList(stub shim.ChaincodeStubInterface, tableName string, args []string) ([]shim.Row, error) {
 	var columns []shim.Column
