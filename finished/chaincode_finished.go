@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"time"
 
 	"github.com/hyperledger/fabric/core/chaincode/shim"
 )
@@ -187,7 +186,7 @@ func (t *SimpleChaincode) PostAsset(stub shim.ChaincodeStubInterface, args []str
 			return buff, err
 		}
 		//update Asset History table
-		keys1 := []string{"2016", assetObject.Serialno, time.Now().Format("2006-01-02 15:04:05")}
+		keys1 := []string{"2016", assetObject.Serialno, "random"}
 		err = UpdateLedger(stub, "ContractHistory", keys1, buff)
 		if err != nil {
 			fmt.Println("PostItem() : write error while inserting record into contract history table\n")
@@ -352,4 +351,72 @@ func (t *SimpleChaincode) GetHistory(stub shim.ChaincodeStubInterface, args []st
 
 	fmt.Println("GetItem() : Response : Successfull ")
 	return Avalbytes, nil
+}
+
+/*func GetListOfContractHistory(stub shim.ChaincodeStubInterface, function string, args []string) ([]byte, error) {
+
+	rows, err := GetList(stub, "ContractHistory", args)
+	if err != nil {
+		return nil, fmt.Errorf("GetListOfOpenAucs operation failed. Error marshaling JSON: %s", err)
+	}
+
+	nCol := GetNumberOfKeys("ContractHistory")
+
+	tlist := make([]AssetObject, len(rows))
+	for i := 0; i < len(rows); i++ {
+		ts := rows[i].Columns[nCol].GetBytes()
+		ar, err := JSONtoAucReq(ts)
+		if err != nil {
+			fmt.Println("GetListOfOpenAucs() Failed : Ummarshall error")
+			return nil, fmt.Errorf("GetListOfOpenAucs() operation failed. %s", err)
+		}
+		tlist[i] = ar
+	}
+
+	jsonRows, _ := json.Marshal(tlist)
+
+	//fmt.Println("List of Open Auctions : ", jsonRows)
+	return jsonRows, nil
+
+}*/
+
+func GetList(stub shim.ChaincodeStubInterface, tableName string, args []string) ([]shim.Row, error) {
+	var columns []shim.Column
+
+	nKeys := GetNumberOfKeys(tableName)
+	nCol := len(args)
+	if nCol < 1 {
+		fmt.Println("Atleast 1 Key must be provided \n")
+		return nil, errors.New("GetList failed. Must include at least key values")
+	}
+
+	for i := 0; i < nCol; i++ {
+		colNext := shim.Column{Value: &shim.Column_String_{String_: args[i]}}
+		columns = append(columns, colNext)
+	}
+
+	rowChannel, err := stub.GetRows(tableName, columns)
+	if err != nil {
+		return nil, fmt.Errorf("GetList operation failed. %s", err)
+	}
+	var rows []shim.Row
+	for {
+		select {
+		case row, ok := <-rowChannel:
+			if !ok {
+				rowChannel = nil
+			} else {
+				rows = append(rows, row)
+				//If required enable for debugging
+				//fmt.Println(row)
+			}
+		}
+		if rowChannel == nil {
+			break
+		}
+	}
+
+	fmt.Println("Number of Keys retrieved : ", nKeys)
+	fmt.Println("Number of rows retrieved : ", len(rows))
+	return rows, nil
 }
