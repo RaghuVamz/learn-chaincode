@@ -141,6 +141,8 @@ func (t *SimpleChaincode) Query(stub shim.ChaincodeStubInterface, function strin
 		return t.GetAsset(stub, args)
 	} else if function == "getHistory" {
 		return t.GetHistory(stub, args)
+	} else if function == "getListContractHistory" {
+		return t.GetListOfContractHistory(stub, args)
 	}
 	fmt.Println("invoke did not find func: " + function) //error
 
@@ -353,7 +355,7 @@ func (t *SimpleChaincode) GetHistory(stub shim.ChaincodeStubInterface, args []st
 	return Avalbytes, nil
 }
 
-func GetListOfContractHistory(stub shim.ChaincodeStubInterface, function string, args []string) ([]byte, error) {
+func (t *SimpleChaincode) GetListOfContractHistory(stub shim.ChaincodeStubInterface, args []string) ([]byte, error) {
 
 	rows, err := GetList(stub, "ContractHistory", args)
 	if err != nil {
