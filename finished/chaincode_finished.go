@@ -33,7 +33,7 @@ type AssetObject struct {
 	Owner    string
 }
 
-var aucTables = []string{"AssetTable"}
+var aucTables = []string{"AssetTable", "ContractHistory"}
 
 func GetNumberOfKeys(tname string) int {
 	TableMap := map[string]int{
