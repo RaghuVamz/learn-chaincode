@@ -17,11 +17,29 @@ limitations under the License.
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 
 	"github.com/hyperledger/fabric/core/chaincode/shim"
 )
+
+// AssetObject struct
+type AssetObject struct {
+	Serialno string
+	Partno   string
+	Owner    string
+}
+
+var aucTables = []string{"AssetTable"}
+
+func GetNumberOfKeys(tname string) int {
+	TableMap := map[string]int{
+		"AssetTable": 1,
+	}
+	return TableMap[tname]
+}
 
 // SimpleChaincode example simple Chaincode implementation
 type SimpleChaincode struct {
@@ -34,82 +52,241 @@ func main() {
 	}
 }
 
-// Init resets all the things
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// SimpleChaincode - Init Chaincode implementation - The following sequence of transactions can be used to test the Chaincode
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 func (t *SimpleChaincode) Init(stub shim.ChaincodeStubInterface, function string, args []string) ([]byte, error) {
-	if len(args) != 1 {
-		return nil, errors.New("Incorrect number of arguments. Expecting 1")
-	}
 
-	err := stub.PutState("hello_world", []byte(args[0]))
+	// TODO - Include all initialization to be complete before Invoke and Query
+	// Uses aucTables to delete tables if they exist and re-create them
+	//myLogger.Info("[Trade and Auction Application] Init")
+	fmt.Println("[Trade and Auction Application] Init")
+	var err error
+
+	for _, val := range aucTables {
+		err = stub.DeleteTable(val)
+		if err != nil {
+			return nil, fmt.Errorf("Init(): DeleteTable of %s  Failed ", val)
+		}
+		err = InitLedger(stub, val)
+		if err != nil {
+			return nil, fmt.Errorf("Init(): InitLedger of %s  Failed ", val)
+		}
+	}
+	// Update the ledger with the Application version
+	err = stub.PutState("version", []byte(strconv.Itoa(23)))
 	if err != nil {
 		return nil, err
 	}
 
-	return nil, nil
+	fmt.Println("Init() Initialization Complete  : ", args)
+	return []byte("Init(): Initialization Complete"), nil
 }
 
-// Invoke isur entry point to invoke a chaincode function
-func (t *SimpleChaincode) Invoke(stub shim.ChaincodeStubInterface, function string, args []string) ([]byte, error) {
-	fmt.Println("invoke is running " + function)
+func InitLedger(stub shim.ChaincodeStubInterface, tableName string) error {
 
-	// Handle different functions
-	if function == "init" {
-		return t.Init(stub, "init", args)
-	} else if function == "write" {
-		return t.write(stub, args)
-	}
-	fmt.Println("invoke did not find func: " + function)
+	// Generic Table Creation Function - requires Table Name and Table Key Entry
+	// Create Table - Get number of Keys the tables supports
+	// This version assumes all Keys are String and the Data is Bytes
+	// This Function can replace all other InitLedger function in this app such as InitItemLedger()
 
-	return nil, errors.New("Received unknown function invocation: " + function)
-}
-
-// Query is our entry point for queries
-func (t *SimpleChaincode) Query(stub shim.ChaincodeStubInterface, function string, args []string) ([]byte, error) {
-	fmt.Println("query is running " + function)
-
-	// Handle different functions
-	if function == "read" { //read a variable
-		return t.read(stub, args)
-	}
-	fmt.Println("query did not find func: " + function)
-
-	return nil, errors.New("Received unknown function query: " + function)
-}
-
-// write - invoke function to write key/value pair
-func (t *SimpleChaincode) write(stub shim.ChaincodeStubInterface, args []string) ([]byte, error) {
-	var key, value string
-	var err error
-	fmt.Println("running write()")
-
-	if len(args) != 2 {
-		return nil, errors.New("Incorrect number of arguments. Expecting 2. name of the key and value to set")
+	nKeys := GetNumberOfKeys(tableName)
+	if nKeys < 1 {
+		fmt.Println("Atleast 1 Key must be provided \n")
+		fmt.Println("Auction_Application: Failed creating Table ", tableName)
+		return errors.New("Auction_Application: Failed creating Table " + tableName)
 	}
 
-	key = args[0] //rename for funsies
-	value = args[1]
-	err = stub.PutState(key, []byte(value)) //write the variable into the chaincode state
+	var columnDefsForTbl []*shim.ColumnDefinition
+
+	for i := 0; i < nKeys; i++ {
+		columnDef := shim.ColumnDefinition{Name: "keyName" + strconv.Itoa(i), Type: shim.ColumnDefinition_STRING, Key: true}
+		columnDefsForTbl = append(columnDefsForTbl, &columnDef)
+	}
+
+	columnLastTblDef := shim.ColumnDefinition{Name: "Details", Type: shim.ColumnDefinition_BYTES, Key: false}
+	columnDefsForTbl = append(columnDefsForTbl, &columnLastTblDef)
+
+	// Create the Table (Nil is returned if the Table exists or if the table is created successfully
+	err := stub.CreateTable(tableName, columnDefsForTbl)
+
 	if err != nil {
+		fmt.Println("Auction_Application: Failed creating Table ", tableName)
+		return errors.New("Auction_Application: Failed creating Table " + tableName)
+	}
+
+	return err
+}
+
+//////////////////////////////////////////////////////////////
+// Invoke Functions based on Function name
+// The function name gets resolved to one of the following calls
+// during an invoke
+//
+//////////////////////////////////////////////////////////////
+func InvokeFunction(fname string) func(stub shim.ChaincodeStubInterface, function string, args []string) ([]byte, error) {
+	InvokeFunc := map[string]func(stub shim.ChaincodeStubInterface, function string, args []string) ([]byte, error){
+		"PostAsset": PostAsset,
+	}
+	return InvokeFunc[fname]
+}
+
+//////////////////////////////////////////////////////////////
+// Query Functions based on Function name
+//
+//////////////////////////////////////////////////////////////
+func QueryFunction(fname string) func(stub shim.ChaincodeStubInterface, function string, args []string) ([]byte, error) {
+	QueryFunc := map[string]func(stub shim.ChaincodeStubInterface, function string, args []string) ([]byte, error){
+		"GetAsset": GetAsset,
+	}
+	return QueryFunc[fname]
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Create a master Object of the Item
+// Since the Owner Changes hands, a record has to be written for each
+// Transaction with the updated Encryption Key of the new owner
+// Example
+//./peer chaincode invoke -l golang -n mycc -c '{"Function": "PostItem", "Args":["1000", "ARTINV", "Shadows by Asppen", "Asppen Messer", "20140202", "Original", "Landscape" , "Canvas", "15 x 15 in", "sample_7.png","$600", "100"]}'
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+func PostAsset(stub shim.ChaincodeStubInterface, function string, args []string) ([]byte, error) {
+
+	assetObject, err := CreateAsset(args[0:])
+	if err != nil {
+		fmt.Println("PostItem(): Cannot create item object \n")
 		return nil, err
 	}
+
+	/*// Check if the Owner ID specified is registered and valid
+	ownerInfo, err := ValidateMember(stub, itemObject.CurrentOwnerID)
+	fmt.Println("Owner information  ", ownerInfo, itemObject.CurrentOwnerID)
+	if err != nil {
+		fmt.Println("PostItem() : Failed Owner information not found for ", itemObject.CurrentOwnerID)
+		return nil, err
+	}*/
+
+	// Convert Item Object to JSON
+	buff, err := ARtoJSON(assetObject) //
+	if err != nil {
+		fmt.Println("PostItem() : Failed Cannot create object buffer for write : ", args[1])
+		return nil, errors.New("PostItem(): Failed Cannot create object buffer for write : " + args[1])
+	} else {
+		// Update the ledger with the Buffer Data
+		// err = stub.PutState(args[0], buff)
+		keys := []string{args[0]}
+		err = UpdateLedger(stub, "AssetTable", keys, buff)
+		if err != nil {
+			fmt.Println("PostItem() : write error while inserting record\n")
+			return buff, err
+		}
 	return nil, nil
 }
 
-// read - query function to read key/value pair
-func (t *SimpleChaincode) read(stub shim.ChaincodeStubInterface, args []string) ([]byte, error) {
-	var key, jsonResp string
+// CreateAssetObject creates an asset
+func CreateAsset(args []string) (AssetObject, error) {
+	// S001 LHTMO bosch
 	var err error
+	var myAsset AssetObject
 
-	if len(args) != 1 {
-		return nil, errors.New("Incorrect number of arguments. Expecting name of the key to query")
+	// Check there are 3 Arguments provided as per the the struct
+	if len(args) != 3 {
+		fmt.Println("CreateAssetObject(): Incorrect number of arguments. Expecting 3 ")
+		return myAsset, errors.New("CreateAssetObject(): Incorrect number of arguments. Expecting 3 ")
 	}
 
-	key = args[0]
-	valAsbytes, err := stub.GetState(key)
+	// Validate Serialno is an integer
+
+	_, err = strconv.Atoi(args[0])
 	if err != nil {
-		jsonResp = "{\"Error\":\"Failed to get state for " + key + "\"}"
+		fmt.Println("CreateAssetObject(): SerialNo should be an integer create failed! ")
+		return myAsset, errors.New("CreateAssetbject(): SerialNo should be an integer create failed. ")
+	}
+
+	myAsset = AssetObject{args[0], args[1], args[2]}
+
+	fmt.Println("CreateAssetObject(): Asset Object created: ", myAsset.Serialno, myAsset.Partno, myAsset.Owner)
+	return myAsset, nil
+}
+
+// ARtoJSON Converts an Asset Object to a JSON String
+func ARtoJSON(ast AssetObject) ([]byte, error) {
+
+	ajson, err := json.Marshal(ast)
+	if err != nil {
+		fmt.Println(err)
+		return nil, err
+	}
+	return ajson, nil
+}
+
+func UpdateLedger(stub shim.ChaincodeStubInterface, tableName string, keys []string, args []byte) error {
+
+	nKeys := GetNumberOfKeys(tableName)
+	if nKeys < 1 {
+		fmt.Println("Atleast 1 Key must be provided \n")
+	}
+
+	var columns []*shim.Column
+
+	for i := 0; i < nKeys; i++ {
+		col := shim.Column{Value: &shim.Column_String_{String_: keys[i]}}
+		columns = append(columns, &col)
+	}
+
+	lastCol := shim.Column{Value: &shim.Column_Bytes{Bytes: []byte(args)}}
+	columns = append(columns, &lastCol)
+
+	row := shim.Row{columns}
+	ok, err := stub.InsertRow(tableName, row)
+	if err != nil {
+		return fmt.Errorf("UpdateLedger: InsertRow into "+tableName+" Table operation failed. %s", err)
+	}
+	if !ok {
+		return errors.New("UpdateLedger: InsertRow into " + tableName + " Table failed. Row with given key " + keys[0] + " already exists")
+	}
+
+	fmt.Println("UpdateLedger: InsertRow into ", tableName, " Table operation Successful. ")
+	return nil
+}
+
+func GetItem(stub shim.ChaincodeStubInterface, function string, args []string) ([]byte, error) {
+
+	var err error
+
+	// Get the Objects and Display it
+	Avalbytes, err := QueryLedger(stub, "AssetTable", args)
+	if err != nil {
+		fmt.Println("GetItem() : Failed to Query Object ")
+		jsonResp := "{\"Error\":\"Failed to get  Object Data for " + args[0] + "\"}"
 		return nil, errors.New(jsonResp)
 	}
 
-	return valAsbytes, nil
+	if Avalbytes == nil {
+		fmt.Println("GetItem() : Incomplete Query Object ")
+		jsonResp := "{\"Error\":\"Incomplete information about the key for " + args[0] + "\"}"
+		return nil, errors.New(jsonResp)
+	}
+
+	fmt.Println("GetItem() : Response : Successfull ")
+
+	// Masking ItemImage binary data
+	itemObj, _ := JSONtoAR(Avalbytes)
+	itemObj.ItemImage = []byte{}
+	Avalbytes, _ = ARtoJSON(itemObj)
+
+	return Avalbytes, nil
 }
+
+func JSONtoAR(data []byte) (ItemObject, error) {
+
+	ar := ItemObject{}
+	err := json.Unmarshal([]byte(data), &ar)
+	if err != nil {
+		fmt.Println("Unmarshal failed : ", err)
+	}
+
+	return ar, err
+}
+
