@@ -140,6 +140,8 @@ func (t *SimpleChaincode) Query(stub shim.ChaincodeStubInterface, function strin
 	// Handle different functions
 	if function == "getAsset" {
 		return t.GetAsset(stub, args)
+	} else if function == "getHistory" {
+		return t.GetHistory(stub, args)
 	}
 	fmt.Println("invoke did not find func: " + function) //error
 
